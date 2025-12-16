@@ -1,5 +1,6 @@
 const Merchant = require("../models/merchants.model");
 const jwt = require("jsonwebtoken");
+const { sendOtpEmail } = require("../services/emailService");
 
 // 🔹 Helper: generate 6-digit OTP
 const generateOtp = () => {
@@ -20,13 +21,15 @@ const generateToken = (merchant) => {
 // ===============================
 exports.sendMerchantOtp = async (req, res) => {
   try {
-    const { email } = req.body;
+    let { email } = req.body;
 
     if (!email) {
       return res
         .status(400)
         .json({ success: false, message: "email is required" });
     }
+
+    email = email.trim().toLowerCase();
 
     const merchant = await Merchant.findOne({ email });
 
@@ -37,25 +40,27 @@ exports.sendMerchantOtp = async (req, res) => {
     }
 
     const otp = generateOtp();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 min
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
     merchant.otpCode = otp;
     merchant.otpExpiresAt = expiresAt;
     await merchant.save();
 
-    // TODO: integrate email service (Nodemailer / SendGrid)
-    console.log("Merchant Email OTP:", otp, "for email:", email);
+    // ✅ SEND EMAIL
+    await sendOtpEmail(email, otp);
 
     return res.status(200).json({
       success: true,
-      message: "OTP sent successfully to email (check server log for now)",
+      message: "OTP sent successfully to email",
     });
   } catch (error) {
     console.error("Send OTP Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send OTP email",
+    });
   }
 };
-
 // ===============================
 // 🔹 STEP 2: VERIFY OTP & LOGIN
 // ===============================
