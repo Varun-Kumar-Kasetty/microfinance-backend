@@ -1,12 +1,12 @@
 const express = require("express");
 const router = express.Router();
 const activityController = require("../controllers/activityController");
-const authMiddleware = require("../middleware/auth");
+const auth = require("../middleware/auth");
 
 // Recent Activities
 router.get(
-  "/merchant/recent-activities",
-  authMiddleware,
+  "/merchant/recent",
+  auth,
   activityController.getRecentActivities
 );
 
