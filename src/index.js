@@ -29,7 +29,7 @@ app.use("/api/fraud", require('./routes/fraud.route')); //Tested
 app.use("/api/reports", require('./routes/reports.routes')); //Tested
 app.use("/api/test/cron", require('./routes/testCron.routes')); //Tested
 app.use("/api/push", require('./routes/push.routes')); //Tested
-
+app.use("/api", require("./routes/activityRoutes")); //Tested
 
 
 
