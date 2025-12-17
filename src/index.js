@@ -29,7 +29,7 @@ app.use("/api/fraud", require('./routes/fraud.route')); //Tested
 app.use("/api/reports", require('./routes/reports.routes')); //Tested
 app.use("/api/test/cron", require('./routes/testCron.routes')); //Tested
 app.use("/api/push", require('./routes/push.routes')); //Tested
-
+app.use("/api", require("./routes/activityRoutes")); //Tested
 
 
 
@@ -37,9 +37,10 @@ app.get("/", (req, res) => {
   res.send("LendSafe API running...");
 });
 
-app.listen(PORT, () => {
-        console.log(`The server is running at Port: ${PORT}.`);
-    })
+app.listen(8686, "0.0.0.0", () => {
+  console.log(`The server is running at Port: ${PORT}.`);
+});
+
 
 require("./cron/dailySummary.cron");
 console.log("Cron jobs loaded.");
