@@ -11,7 +11,7 @@ const generateOtp = () => {
 const generateToken = (merchant) => {
   return jwt.sign(
     { MID: merchant.MID, email: merchant.email },
-    process.env.JWT_SECRET || "MY_SECRET_KEY",
+    process.env.JWT_SECRET,
     { expiresIn: "7d" }
   );
 };

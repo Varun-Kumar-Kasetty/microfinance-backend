@@ -3,43 +3,32 @@ const jwt = require("jsonwebtoken");
 module.exports = (req, res, next) => {
   try {
     const header = req.headers.authorization || "";
-    const token = header.startsWith("Bearer ")
-      ? header.split(" ")[1]
-      : null;
 
-    if (!token) {
+    if (!header.startsWith("Bearer ")) {
       return res.status(401).json({
         success: false,
-        message: "Access denied. No token provided.",
+        message: "Authorization header missing or malformed",
       });
     }
 
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "MY_SECRET_KEY"
-    );
+    const token = header.split(" ")[1];
 
-    // OPTIONAL: role validation (safe even if role not present)
-    if (decoded.role && decoded.role !== "merchant") {
-      return res.status(403).json({
-        success: false,
-        message: "Invalid token for merchant",
-      });
-    }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // ✅ STANDARDIZED USER OBJECT
+    // ✅ Standard user object
     req.user = {
       MID: decoded.MID,
       phoneNumber: decoded.phoneNumber,
-      role: decoded.role || "merchant",
+      role: decoded.role,
     };
 
-    // ✅ OPTIONAL: merchant alias (backward compatibility)
+    // ✅ Backward compatibility
     req.merchant = req.user;
 
     next();
   } catch (error) {
-    console.error("Auth Middleware Error:", error);
+    console.error("Auth Middleware Error:", error.message);
+
     return res.status(401).json({
       success: false,
       message: "Invalid or expired token",
