@@ -3,39 +3,35 @@ const jwt = require("jsonwebtoken");
 module.exports = (req, res, next) => {
   try {
     const header = req.headers.authorization || "";
-    const token = header.startsWith("Bearer ")
-      ? header.split(" ")[1]
-      : null;
 
-    if (!token) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Access denied. No token provided." });
-    }
-
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "MY_SECRET_KEY"
-    );
-
-    // MUST be merchant
-    if (decoded.role && decoded.role !== "merchant") {
-      return res.status(403).json({
+    if (!header.startsWith("Bearer ")) {
+      return res.status(401).json({
         success: false,
-        message: "Invalid token for merchant",
+        message: "Authorization header missing or malformed",
       });
     }
 
-    req.merchant = {
+    const token = header.split(" ")[1];
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // ✅ Standard user object
+    req.user = {
       MID: decoded.MID,
       phoneNumber: decoded.phoneNumber,
+      role: decoded.role,
     };
+
+    // ✅ Backward compatibility
+    req.merchant = req.user;
 
     next();
   } catch (error) {
-    console.error("Merchant Auth Middleware Error:", error);
-    return res
-      .status(401)
-      .json({ success: false, message: "Invalid or expired token" });
+    console.error("Auth Middleware Error:", error.message);
+
+    return res.status(401).json({
+      success: false,
+      message: "Invalid or expired token",
+    });
   }
 };
