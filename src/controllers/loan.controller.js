@@ -7,8 +7,16 @@ const { runLoanFraudChecks } = require("../services/fraud.service");
 // ----------------- CREATE LOAN (merchant only) -----------------
 exports.createLoan = async (req, res) => {
   try {
-    const { BID, loanAmount, loanDurationDays, purpose, imagePath } = req.body;
-
+    const {
+      BID,
+      loanAmount,
+      loanDurationDays,
+      purpose,
+      imagePath,
+      startDate,
+    } = req.body;
+    const safeStartDate = startDate ? new Date(startDate) : new Date();
+    
     const merchantMID = req.merchant?.MID;
     if (!merchantMID) {
       return res
@@ -24,13 +32,18 @@ exports.createLoan = async (req, res) => {
         .json({ success: false, message: "Borrower not found" });
     }
 
-    // borrower must belong to this merchant
+    let crossMerchantWarning = null;
+
     if (borrower.VID !== merchantMID) {
-      return res.status(403).json({
-        success: false,
-        message: "You cannot create loan for another merchant's borrower",
-      });
-    }
+      crossMerchantWarning = {
+      code: "CROSS_MERCHANT_BORROWER",
+      message: "Borrower already has a relationship with another merchant",
+      previousMerchantId: borrower.VID,
+  };
+}
+
+    // borrower must belong to this merchant
+    
 
     const loan = await Loan.create({
       BID,
@@ -39,7 +52,9 @@ exports.createLoan = async (req, res) => {
       loanDurationDays,
       purpose,
       imagePath,
+      startDate: safeStartDate, // ✅ THIS LINE FIXES THE ERROR
     });
+
 
     borrower.totalLoans = (borrower.totalLoans || 0) + 1;
     borrower.activeLoans = (borrower.activeLoans || 0) + 1;
@@ -75,11 +90,13 @@ exports.createLoan = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: "Loan created successfully",
+      warning: crossMerchantWarning, // 👈 IMPORTANT
       data: {
         loan,
         fraudAlerts,
       },
     });
+
   } catch (error) {
     console.error("Create Loan Error:", error);
     return res.status(500).json({ success: false, message: error.message });
@@ -136,17 +153,19 @@ exports.payLoanAmount = async (req, res) => {
     const { amount, note, method } = req.body;
 
     if (!amount || amount <= 0) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Valid amount is required" });
+      return res.status(400).json({
+        success: false,
+        message: "Valid amount is required",
+      });
     }
 
     const loan = await Loan.findOne({ LID: lid });
 
     if (!loan) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Loan not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Loan not found",
+      });
     }
 
     if (loan.status === "closed") {
@@ -156,14 +175,35 @@ exports.payLoanAmount = async (req, res) => {
       });
     }
 
-    // Update loan payment info
-    loan.totalPaid = (loan.totalPaid || 0) + amount;
+    // ✅ STEP 1: calculate remaining (REAL math)
+    const totalPaidSoFar = loan.totalPaid || 0;
+    const remainingAmount = loan.loanAmount - totalPaidSoFar;
+
+    if (remainingAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Loan already fully paid",
+      });
+    }
+
+    // ❌ block overpayment (hard rule)
+    if (amount > remainingAmount) {
+      return res.status(400).json({
+        success: false,
+        message: `Payment exceeds remaining amount. Max allowed: ₹${remainingAmount}`,
+      });
+    }
+
+    // ✅ STEP 2: update ONLY real fields
+    loan.totalPaid = totalPaidSoFar + amount;
+
     loan.paymentHistory.push({
       amount,
       note: note || "",
+      paidAt: new Date(),
     });
 
-    // Create transaction
+    // ✅ STEP 3: create transaction (ONLY real fields)
     const tx = await Transaction.create({
       LID: loan.LID,
       BID: loan.BID,
@@ -174,25 +214,26 @@ exports.payLoanAmount = async (req, res) => {
       paidAt: new Date(),
     });
 
-    // Check for closing
+    // ✅ STEP 4: close loan if exactly paid
     let loanJustClosed = false;
-    if (loan.totalPaid >= loan.loanAmount) {
+    if (loan.totalPaid === loan.loanAmount) {
       loan.status = "closed";
       loan.closedAt = new Date();
       loanJustClosed = true;
 
       const borrower = await Borrower.findOne({ BID: loan.BID });
       if (borrower) {
-        borrower.activeLoans = Math.max((borrower.activeLoans || 1) - 1, 0);
+        borrower.activeLoans = Math.max(
+          (borrower.activeLoans || 1) - 1,
+          0
+        );
         await borrower.save();
       }
     }
 
     await loan.save();
 
-    // 🔔 Notifications
-
-    // To merchant – borrower paid
+    // 🔔 Notifications (unchanged logic)
     await createNotification({
       targetType: "merchant",
       MID: loan.MID,
@@ -204,7 +245,6 @@ exports.payLoanAmount = async (req, res) => {
       message: `Borrower BID ${loan.BID} paid ₹${amount} for loan LID ${loan.LID}.`,
     });
 
-    // To borrower – payment done
     await createNotification({
       targetType: "borrower",
       BID: loan.BID,
@@ -216,14 +256,13 @@ exports.payLoanAmount = async (req, res) => {
       message: `You paid ₹${amount} towards your loan LID ${loan.LID}.`,
     });
 
-    // Optional extra notification when loan fully closed
     if (loanJustClosed) {
       await createNotification({
         targetType: "borrower",
         BID: loan.BID,
         MID: loan.MID,
         LID: loan.LID,
-        type: "payment_made",
+        type: "loan_closed",
         title: "Loan Closed",
         message: "Congratulations! Your loan has been fully repaid and closed.",
       });
@@ -233,7 +272,7 @@ exports.payLoanAmount = async (req, res) => {
         MID: loan.MID,
         BID: loan.BID,
         LID: loan.LID,
-        type: "payment_received",
+        type: "loan_closed",
         title: "Loan Closed by Borrower",
         message: `Borrower BID ${loan.BID} has fully repaid loan LID ${loan.LID}.`,
       });
@@ -249,9 +288,14 @@ exports.payLoanAmount = async (req, res) => {
     });
   } catch (error) {
     console.error("Pay Loan Amount Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
+
+
 
 
 

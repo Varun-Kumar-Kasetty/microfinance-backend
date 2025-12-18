@@ -6,47 +6,45 @@ const Loan = require("../models/loans.model");
 const Transaction = require("../models/transactions.model");
 const Notification = require("../models/notifications.model");
 
-// helper to get start & end of today
+// ---------------- HELPER ----------------
 function getTodayRange() {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
+
   const end = new Date();
   end.setHours(23, 59, 59, 999);
+
   return { start, end };
 }
 
-// ----------------- MERCHANT DASHBOARD -----------------
+// ================= MERCHANT DASHBOARD =================
 exports.getMerchantDashboard = async (req, res) => {
   try {
-    const MID = req.merchant?.MID;
+    const MID = Number(req.merchant?.MID);
     if (!MID) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Unauthorized: merchant token missing" });
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: merchant token missing",
+      });
     }
-    const midNum = Number(MID);
 
     const { start: startToday, end: endToday } = getTodayRange();
 
-    // 1) Loan stats for this merchant
+    // ---------- 1️⃣ LOAN AGGREGATION (SOURCE OF TRUTH) ----------
     const loanAgg = await Loan.aggregate([
-      { $match: { MID: midNum } },
+      { $match: { MID } },
       {
         $group: {
           _id: null,
           totalLoans: { $sum: 1 },
           activeLoans: {
-            $sum: {
-              $cond: [{ $eq: ["$status", "active"] }, 1, 0],
-            },
+            $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] },
           },
           closedLoans: {
-            $sum: {
-              $cond: [{ $eq: ["$status", "closed"] }, 1, 0],
-            },
+            $sum: { $cond: [{ $eq: ["$status", "closed"] }, 1, 0] },
           },
           totalDisbursed: { $sum: "$loanAmount" },
-          totalReceived: { $sum: "$totalPaid" },
+          totalReceived: { $sum: "$totalPaid" }, // ✅ FIXED
         },
       },
     ]);
@@ -60,17 +58,17 @@ exports.getMerchantDashboard = async (req, res) => {
     };
 
     const outstandingAmount =
-      (loanStats.totalDisbursed || 0) - (loanStats.totalReceived || 0);
+      loanStats.totalDisbursed - loanStats.totalReceived;
 
-    // 2) Borrower count for this merchant
-    const totalBorrowers = await Borrower.countDocuments({ VID: midNum });
+    // ---------- 2️⃣ BORROWER COUNT ----------
+    const totalBorrowers = await Borrower.countDocuments({ VID: MID });
 
-    // 3) Today collection (from transactions)
-    const todayAgg = await Transaction.aggregate([
+        // ---------- 3️⃣ TODAY COLLECTION (TRANSACTIONS ONLY) ----------
+        const todayAgg = await Transaction.aggregate([
       {
         $match: {
-          MID: midNum,
-          paidAt: { $gte: startToday, $lte: endToday },
+          MID,
+          createdAt: { $gte: startToday, $lte: endToday },
         },
       },
       {
@@ -81,47 +79,39 @@ exports.getMerchantDashboard = async (req, res) => {
       },
     ]);
 
-    const todayCollection =
-      (todayAgg[0] && todayAgg[0].todayCollection) || 0;
+    const todayCollection = todayAgg[0]?.todayCollection || 0;
 
-    // 4) Recent transactions
-    const recentTransactions = await Transaction.find({ MID: midNum })
+
+
+    // ---------- 4️⃣ RECENT TRANSACTIONS ----------
+    const recentTransactions = await Transaction.find({ MID })
       .sort({ paidAt: -1 })
       .limit(5)
       .lean();
 
-    // 5) Overdue loans
+    // ---------- 5️⃣ OVERDUE LOANS ----------
     const now = new Date();
-    const activeLoans = await Loan.find({
-      MID: midNum,
+
+    const overdueLoans = await Loan.find({
+      MID,
       status: "active",
+      dueDate: { $lt: now },
     })
-      .select("LID BID loanAmount totalPaid loanDurationDays createdAt")
+      .sort({ dueDate: 1 })
+      .limit(5)
       .lean();
 
-    const overdueLoans = activeLoans
-      .map((loan) => {
-        const dueDate = new Date(
-          loan.createdAt.getTime() +
-            loan.loanDurationDays * 24 * 60 * 60 * 1000
-        );
-        return { ...loan, dueDate };
-      })
-      .filter((loan) => loan.dueDate < now)
-      .sort((a, b) => a.dueDate - b.dueDate)
-      .slice(0, 5);
-
-    // 6) Recent notifications for merchant
+    // ---------- 6️⃣ RECENT NOTIFICATIONS ----------
     const recentNotifications = await Notification.find({
       targetType: "merchant",
-      MID: midNum,
+      MID,
     })
       .sort({ createdAt: -1 })
       .limit(5)
       .lean();
 
-    // 7) Merchant basic info
-    const merchant = await Merchant.findOne({ MID: midNum })
+    // ---------- 7️⃣ MERCHANT INFO ----------
+    const merchant = await Merchant.findOne({ MID })
       .select("MID fullName storeName phoneNumber gstVerified")
       .lean();
 
@@ -135,7 +125,7 @@ exports.getMerchantDashboard = async (req, res) => {
           activeLoans: loanStats.activeLoans,
           closedLoans: loanStats.closedLoans,
           totalDisbursed: loanStats.totalDisbursed,
-          totalReceived: loanStats.totalReceived,
+          totalReceived: loanStats.totalReceived, // ✅ CORRECT
           outstandingAmount,
           todayCollection,
         },
@@ -146,42 +136,41 @@ exports.getMerchantDashboard = async (req, res) => {
     });
   } catch (error) {
     console.error("Merchant Dashboard Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
-// ----------------- BORROWER DASHBOARD -----------------
+// ================= BORROWER DASHBOARD =================
 exports.getBorrowerDashboard = async (req, res) => {
   try {
-    const { bid } = req.params;
-    const bidNum = Number(bid);
+    const BID = Number(req.params.bid);
 
-    const borrower = await Borrower.findOne({ BID: bidNum }).lean();
+    const borrower = await Borrower.findOne({ BID }).lean();
     if (!borrower) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Borrower not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Borrower not found",
+      });
     }
 
-    // 1) Loan stats for this borrower
+    // ---------- 1️⃣ BORROWER LOAN AGG ----------
     const loanAgg = await Loan.aggregate([
-      { $match: { BID: bidNum } },
+      { $match: { BID } },
       {
         $group: {
           _id: null,
           totalLoans: { $sum: 1 },
           activeLoans: {
-            $sum: {
-              $cond: [{ $eq: ["$status", "active"] }, 1, 0],
-            },
+            $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] },
           },
           closedLoans: {
-            $sum: {
-              $cond: [{ $eq: ["$status", "closed"] }, 1, 0],
-            },
+            $sum: { $cond: [{ $eq: ["$status", "closed"] }, 1, 0] },
           },
           totalBorrowed: { $sum: "$loanAmount" },
-          totalPaid: { $sum: "$totalPaid" },
+          totalPaid: { $sum: "$totalPaid" }, // ✅ FIXED
         },
       },
     ]);
@@ -195,26 +184,26 @@ exports.getBorrowerDashboard = async (req, res) => {
     };
 
     const outstandingAmount =
-      (stats.totalBorrowed || 0) - (stats.totalPaid || 0);
+      stats.totalBorrowed - stats.totalPaid;
 
-    // 2) Active loans list
+    // ---------- 2️⃣ ACTIVE LOANS ----------
     const activeLoans = await Loan.find({
-      BID: bidNum,
+      BID,
       status: "active",
     })
       .sort({ createdAt: -1 })
       .lean();
 
-    // 3) Recent transactions for borrower
-    const recentTransactions = await Transaction.find({ BID: bidNum })
+    // ---------- 3️⃣ RECENT TRANSACTIONS ----------
+    const recentTransactions = await Transaction.find({ BID })
       .sort({ paidAt: -1 })
       .limit(10)
       .lean();
 
-    // 4) Recent notifications for borrower
+    // ---------- 4️⃣ RECENT NOTIFICATIONS ----------
     const recentNotifications = await Notification.find({
       targetType: "borrower",
-      BID: bidNum,
+      BID,
     })
       .sort({ createdAt: -1 })
       .limit(5)
@@ -229,7 +218,7 @@ exports.getBorrowerDashboard = async (req, res) => {
           activeLoans: stats.activeLoans,
           closedLoans: stats.closedLoans,
           totalBorrowed: stats.totalBorrowed,
-          totalPaid: stats.totalPaid,
+          totalPaid: stats.totalPaid, // ✅ CORRECT
           outstandingAmount,
         },
         activeLoans,
@@ -239,6 +228,9 @@ exports.getBorrowerDashboard = async (req, res) => {
     });
   } catch (error) {
     console.error("Borrower Dashboard Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };

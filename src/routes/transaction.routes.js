@@ -5,6 +5,7 @@ const {
   getMerchantTransactions,
   getBorrowerTransactions,
   getLoanTransactions,
+  createTransaction,
 } = require("../controllers/transaction.controller");
 
 const auth = require("../middleware/auth"); // merchant JWT
@@ -15,6 +16,9 @@ const borrowerAuth = require("../middleware/borrowerAuth"); // borrower JWT
 // MERCHANT – all txns for logged-in merchant
 // Optional: ?bid=1&lid=2 to filter
 router.get("/merchant", auth, getMerchantTransactions);
+
+// MERCHANT – create transaction
+router.post("/", auth, createTransaction);
 
 // BORROWER – txns for borrower by BID (admin / internal)
 router.get("/borrower/:bid", getBorrowerTransactions);

@@ -1,26 +1,63 @@
 const mongoose = require("mongoose");
-const Counter = require("./counter.model"); // shared seq_counters
+const Counter = require("./counter.model");
 
+//
+// 💳 PAYMENT HISTORY SUB-SCHEMA
+//
+const paymentHistorySchema = new mongoose.Schema(
+  {
+    amount: {
+      type: Number,
+      required: true,
+      min: 1,
+    },
+
+    paidAt: {
+      type: Date,
+      default: Date.now,
+    },
+
+    note: {
+      type: String,
+      default: "",
+    },
+
+    // 🔥 SNAPSHOT AFTER THIS PAYMENT
+    remainingAfterPayment: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+  },
+  { _id: true }
+);
+
+//
+// 🧾 LOAN SCHEMA
+//
 const loanSchema = new mongoose.Schema(
   {
+    // Auto-increment Loan ID
     LID: {
       type: Number,
       unique: true,
       index: true,
     },
 
-    // Borrower BID (FK)
+    // Borrower reference
     BID: {
       type: Number,
       ref: "Borrower",
       required: true,
+      index: true,
     },
 
-    // Merchant MID (FK) – who created the loan
+    // Merchant reference
     MID: {
       type: Number,
       ref: "Merchant",
       required: true,
+      index: true,
     },
 
     loanAmount: {
@@ -29,7 +66,7 @@ const loanSchema = new mongoose.Schema(
       min: 1,
     },
 
-    // duration in days
+    // Duration in days
     loanDurationDays: {
       type: Number,
       required: true,
@@ -50,6 +87,7 @@ const loanSchema = new mongoose.Schema(
       type: String,
       enum: ["active", "closed"],
       default: "active",
+      index: true,
     },
 
     totalPaid: {
@@ -57,30 +95,34 @@ const loanSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+
+    // Calculated field (middleware)
     dueDate: {
       type: Date,
-      default: function () {
-        return new Date(
-          this.createdAt.getTime() +
-            this.loanDurationDays * 24 * 60 * 60 * 1000
-        );
-      },
     },
-        // full loan due date
-    nextDueDate: { type: Date },     // next EMI date
-    overdueDays: { type: Number, default: 0 },
-    isOverdue: { type: Boolean, default: false },
 
-    paymentHistory: [
-      {
-        amount: { type: Number, required: true, min: 1 },
-        paidAt: { type: Date, default: Date.now },
-        note: { type: String, default: "" },
-      },
-    ],
+    // EMI / overdue helpers
+    nextDueDate: {
+      type: Date,
+      default: null,
+    },
 
+    overdueDays: {
+      type: Number,
+      default: 0,
+    },
 
-    
+    isOverdue: {
+      type: Boolean,
+      default: false,
+    },
+
+    // 💳 PAYMENT HISTORY (ORDER MATTERS)
+    paymentHistory: {
+      type: [paymentHistorySchema],
+      default: [],
+    },
+
     closedAt: {
       type: Date,
       default: null,
@@ -89,13 +131,14 @@ const loanSchema = new mongoose.Schema(
   {
     collection: "loans",
     timestamps: true,
-    // ⭐ IMPORTANT: include virtuals (like remainingAmount) in JSON responses
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
   }
 );
 
-// 🔁 Auto-increment LID using seq_counters
+//
+// 🔁 AUTO-INCREMENT LID
+//
 loanSchema.pre("save", async function () {
   if (!this.isNew || this.LID) return;
 
@@ -108,11 +151,37 @@ loanSchema.pre("save", async function () {
   this.LID = counter.seq;
 });
 
-// ⭐ VIRTUAL FIELD: remainingAmount = loanAmount - totalPaid
+//
+// 📅 CALCULATE DUE DATE SAFELY
+//
+loanSchema.pre("save", function () {
+  const baseDate = this.createdAt || new Date();
+  const durationDays = this.loanDurationDays || 0;
+
+  this.dueDate = new Date(
+    baseDate.getTime() + durationDays * 24 * 60 * 60 * 1000
+  );
+});
+
+//
+// ⭐ VIRTUAL: remainingAmount (SAFE)
+//
 loanSchema.virtual("remainingAmount").get(function () {
   const paid = this.totalPaid || 0;
   const remaining = this.loanAmount - paid;
   return remaining > 0 ? remaining : 0;
+});
+
+//
+// ⭐ VIRTUAL: paidPercentage (SAFE)
+//
+loanSchema.virtual("paidPercentage").get(function () {
+  if (!this.loanAmount || this.loanAmount <= 0) return 0;
+
+  return Math.min(
+    100,
+    Math.round((this.totalPaid / this.loanAmount) * 100)
+  );
 });
 
 module.exports = mongoose.model("Loan", loanSchema);
