@@ -3,6 +3,7 @@ const Counter = require("./counter.model");
 
 const transactionSchema = new mongoose.Schema(
   {
+    // Auto-increment Transaction ID
     TID: {
       type: Number,
       unique: true,
@@ -12,22 +13,22 @@ const transactionSchema = new mongoose.Schema(
     // Loan reference
     LID: {
       type: Number,
-      ref: "Loan",
       required: true,
+      index: true,
     },
 
     // Borrower reference
     BID: {
       type: Number,
-      ref: "Borrower",
       required: true,
+      index: true,
     },
 
     // Merchant reference
     MID: {
       type: Number,
-      ref: "Merchant",
       required: true,
+      index: true,
     },
 
     amount: {
@@ -36,22 +37,28 @@ const transactionSchema = new mongoose.Schema(
       min: 1,
     },
 
-    // e.g. cash / upi / bank / other (optional)
     method: {
       type: String,
-      enum: ["cash", "upi", "bank", "other"],
+      enum: ["cash", "upi", "bank"],
       default: "cash",
     },
 
     note: {
       type: String,
       default: "",
-      maxLength: 1000,
     },
 
     paidAt: {
       type: Date,
       default: Date.now,
+      index: true,
+    },
+
+    // 🔥 SNAPSHOT: remaining balance AFTER this payment
+    remainingAfterPayment: {
+      type: Number,
+      required: true,
+      min: 0,
     },
   },
   {
@@ -60,7 +67,9 @@ const transactionSchema = new mongoose.Schema(
   }
 );
 
-// Auto-increment TID
+//
+// 🔁 AUTO-INCREMENT TID
+//
 transactionSchema.pre("save", async function () {
   if (!this.isNew || this.TID) return;
 
