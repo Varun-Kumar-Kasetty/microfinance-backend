@@ -8,6 +8,8 @@ const Loan = require("../models/loans.model");
  * CREATE BORROWER (merchant only)
  * ===============================
  */
+
+
 exports.createBorrower = async (req, res) => {
   try {
     const MID = req.merchant?.MID;
