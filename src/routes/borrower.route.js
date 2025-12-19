@@ -2,6 +2,14 @@
 const express = require("express");
 const router = express.Router();
 
+const borrowerAuth = require("../middleware/borrowerAuth");
+const borrowerQrController = require("../controllers/borrowerQr.controller");
+
+const merchantAuth = require("../middleware/merchantAuth");
+
+const verifyBorrowerController = require("../controllers/verifyBorrower.controller");
+
+
 const {
   createBorrower,
   getAllBorrowers,
@@ -30,5 +38,14 @@ router.put("/:bid", updateBorrowerByBID);
 
 // DELETE by BID
 router.delete("/:bid", deleteBorrowerByBID);
+
+
+router.get("/qr", borrowerAuth, borrowerQrController.generateBorrowerQr);
+
+
+
+router.post("/verify", merchantAuth, verifyBorrowerController.verifyBorrower
+);
+
 
 module.exports = router;

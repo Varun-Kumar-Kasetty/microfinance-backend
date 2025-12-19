@@ -1,15 +1,23 @@
 const mongoose = require("mongoose");
 const Counter = require("./counter.model");
+const crypto = require("crypto");
 
 const borrowerSchema = new mongoose.Schema(
   {
+    // 🔢 Internal auto-increment ID (DO NOT expose)
     BID: {
       type: Number,
       unique: true,
       index: true,
     },
 
-    
+    // 🆔 Public Borrower ID (USED FOR QR & MANUAL ENTRY)
+    borrowerUID: {
+      type: String,
+      unique: true,
+      index: true,
+      immutable: true,
+    },
 
     fullName: {
       type: String,
@@ -57,7 +65,7 @@ const borrowerSchema = new mongoose.Schema(
       default: "",
     },
 
-    // ✅ GEO FIELDS
+    // 📍 Address fields
     address: {
       type: String,
       default: "",
@@ -74,6 +82,8 @@ const borrowerSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+
+    // 🌍 Geo location
     locationGeo: {
       type: {
         type: String,
@@ -86,12 +96,11 @@ const borrowerSchema = new mongoose.Schema(
       },
     },
 
-    // 🔑 OTP login fields
+    // 🔑 OTP login
     otpCode: {
       type: String,
       default: null,
     },
-
     otpExpiresAt: {
       type: Date,
       default: null,
@@ -103,20 +112,32 @@ const borrowerSchema = new mongoose.Schema(
   }
 );
 
-// Geo index
+// 🌍 Geo index
 borrowerSchema.index({ locationGeo: "2dsphere" });
 
-// 🔁 Auto-increment BID using seq_counters
-borrowerSchema.pre("save", async function () {
-  if (!this.isNew || this.BID) return;
+/**
+ * 🔁 Pre-save hook
+ * - Auto increment BID
+ * - Generate borrowerUID once
+ */
+borrowerSchema.pre("save", async function (next) {
+  // Generate borrowerUID (only once)
+  if (this.isNew && !this.borrowerUID) {
+    const random = crypto.randomBytes(4).toString("hex").toUpperCase();
+    this.borrowerUID = `LS-BRW-${random}`;
+  }
 
-  const counter = await Counter.findOneAndUpdate(
-    { key: "borrowerBID" },
-    { $inc: { seq: 1 } },
-    { new: true, upsert: true }
-  );
+  // Auto-increment BID
+  if (this.isNew && !this.BID) {
+    const counter = await Counter.findOneAndUpdate(
+      { key: "borrowerBID" },
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+    this.BID = counter.seq;
+  }
 
-  this.BID = counter.seq;
+  next();
 });
 
 module.exports = mongoose.model("Borrower", borrowerSchema);

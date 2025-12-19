@@ -17,7 +17,6 @@ app.use("/api/borrowers", require("./routes/borrower.route")); //Tested : Workin
 app.use("/api/auth/merchant", require("./routes/merchantAuth.route")); //Tested : Working
 app.use("/api/auth/borrower", require("./routes/borrowerAuth.route")); //Tested : Working
 app.use("/api/aadhaar/free", require("./routes/aadhaarFree.routes"));
-app.use("/api/aadhaar/free", require("./routes/verifyOfflineEkyc.routes")); //Tested : Working
 app.use("/api/loans", require("./routes/loan.route")); //Tested : Working
 app.use("/api/community", require("./routes/community.route")); //Tested : Working
 app.use("/api/transactions", require("./routes/transaction.routes")); //Tested : Working
