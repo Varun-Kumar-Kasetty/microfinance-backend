@@ -23,3 +23,6 @@ src/config/
 microfinance-app-008-firebase-adminsdk-fbsvc-0a26e085b6.json
 
 google-services.json
+
+# Firebase / Google secrets
+firebase-service-account.json
