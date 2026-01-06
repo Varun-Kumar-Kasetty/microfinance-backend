@@ -19,3 +19,7 @@ bin-release/
 node_modules/
 .env
 src/config/
+
+microfinance-app-008-firebase-adminsdk-fbsvc-0a26e085b6.json
+
+google-services.json
