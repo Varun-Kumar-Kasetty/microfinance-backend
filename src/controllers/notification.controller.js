@@ -28,13 +28,19 @@ exports.getMerchantNotifications = async (req, res) => {
   }
 };
 
-// BORROWER – list their notifications (by BID)
+// BORROWER – list their notifications (from token)
 exports.getBorrowerNotifications = async (req, res) => {
   try {
-    const { bid } = req.params;
+    const BID = req.borrower?.BID;
+    if (!BID) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: borrower token missing",
+      });
+    }
 
     const { unread } = req.query;
-    const filter = { targetType: "borrower", BID: Number(bid) };
+    const filter = { targetType: "borrower", BID: Number(BID) };
 
     if (unread === "true") {
       filter.isRead = false;
@@ -44,28 +50,49 @@ exports.getBorrowerNotifications = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    return res.status(200).json({ success: true, data: notifs });
+    return res.status(200).json({
+      success: true,
+      data: notifs,
+    });
   } catch (error) {
     console.error("Get Borrower Notifications Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
-// MARK SINGLE NOTIFICATION AS READ
+
 exports.markNotificationRead = async (req, res) => {
   try {
     const { nid } = req.params;
 
+    let filter = { NID: Number(nid) };
+
+    // 🔐 Merchant ownership
+    if (req.merchant?.MID) {
+      filter.targetType = "merchant";
+      filter.MID = Number(req.merchant.MID);
+    }
+
+    // 🔐 Borrower ownership
+    if (req.borrower?.BID) {
+      filter.targetType = "borrower";
+      filter.BID = Number(req.borrower.BID);
+    }
+
     const notif = await Notification.findOneAndUpdate(
-      { NID: Number(nid) },
+      filter,
       { isRead: true },
       { new: true }
     );
 
     if (!notif) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Notification not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Notification not found or not authorized",
+      });
     }
 
     return res.status(200).json({
@@ -78,6 +105,7 @@ exports.markNotificationRead = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
 
 // MARK ALL AS READ FOR CURRENT MERCHANT
 exports.markAllMerchantNotificationsRead = async (req, res) => {
@@ -100,6 +128,33 @@ exports.markAllMerchantNotificationsRead = async (req, res) => {
     });
   } catch (error) {
     console.error("Mark All Merchant Notifications Read Error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+
+// MARK ALL AS READ FOR CURRENT BORROWER
+exports.markAllBorrowerNotificationsRead = async (req, res) => {
+  try {
+    const BID = req.borrower?.BID;
+    if (!BID) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: borrower token missing",
+      });
+    }
+
+    await Notification.updateMany(
+      { targetType: "borrower", BID: Number(BID), isRead: false },
+      { $set: { isRead: true } }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "All borrower notifications marked as read",
+    });
+  } catch (error) {
+    console.error("Mark All Borrower Notifications Read Error:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };

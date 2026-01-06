@@ -15,26 +15,10 @@ const staffAuth = require("../middleware/staffAuth");
 
 // Register device token
 // Try merchant → borrower → staff auth; if none, still works with body userType+MID/BID/SID
-router.post(
-  "/register",
-  (req, res, next) => {
-    // simple middleware chain to attach whichever auth passes
-    const middlewares = [merchantAuth, borrowerAuth, staffAuth];
-    let index = 0;
+// routes/push.routes.js
+router.post("/register", registerDeviceToken);
 
-    function runNext(err) {
-      if (err) {
-        // ignore error, try next auth
-      }
-      const mw = middlewares[index++];
-      if (!mw) return next(); // all done
-      mw(req, res, runNext);
-    }
 
-    runNext();
-  },
-  registerDeviceToken
-);
 
 // Unregister token
 router.post("/unregister", unregisterDeviceToken);

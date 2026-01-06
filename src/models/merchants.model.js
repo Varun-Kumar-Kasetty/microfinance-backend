@@ -40,6 +40,11 @@ const merchantSchema = new mongoose.Schema(
       maxLength: 255,
       match: /^[\w.-]+@[a-zA-Z\d.-]+\.[a-zA-Z]{2,}$/,
     },
+    tempEmail: {
+      type: String,
+      default: null,
+    },
+
 
     address: {
       type: String,

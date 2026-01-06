@@ -10,4 +10,12 @@ router.get(
   activityController.getRecentActivities
 );
 
+// View all activities (merchant)
+router.get(
+  "/merchant/all",
+  auth,
+  activityController.getAllActivities
+);
+
+
 module.exports = router;

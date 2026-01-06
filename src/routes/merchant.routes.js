@@ -1,4 +1,3 @@
-// src/routes/merchant.routes.js
 const express = require("express");
 const router = express.Router();
 
@@ -8,27 +7,59 @@ const {
   getMerchantByMID,
   updateMerchantByMID,
   deleteMerchantByMID,
-  getMerchantProfile,
+  getMerchantSelfProfile,
+  updateMerchantSelfProfile,
+  sendMerchantEmailOtp,
+  verifyMerchantEmailOtp,
 } = require("../controllers/merchant.controller");
 
-// Base path: /api/merchants
+const merchantAuth = require("../middleware/auth");
 
-// CREATE
+/*
+|--------------------------------------------------------------------------
+| SELF PROFILE (JWT BASED) – USED BY ANDROID APP
+|--------------------------------------------------------------------------
+| These MUST come BEFORE any :mid routes
+*/
+
+// GET logged-in merchant profile
+router.get("/profile", merchantAuth, getMerchantSelfProfile);
+
+// UPDATE logged-in merchant profile (restricted fields)
+router.put("/profile", merchantAuth, updateMerchantSelfProfile);
+
+// 🔒 EMAIL UPDATE (OTP FLOW)
+router.post(
+  "/profile/email/send-otp",
+  merchantAuth,
+  sendMerchantEmailOtp
+);
+
+router.post(
+  "/profile/email/verify",
+  merchantAuth,
+  verifyMerchantEmailOtp
+);
+
+/*
+|--------------------------------------------------------------------------
+| ADMIN / INTERNAL ROUTES
+|--------------------------------------------------------------------------
+*/
+
+// CREATE merchant
 router.post("/", createMerchant);
 
-// READ ALL
+// READ ALL merchants
 router.get("/", getAllMerchants);
 
-// READ ONE by MID
+// READ merchant by MID
 router.get("/:mid", getMerchantByMID);
 
-// PROFILE (merchant + loans)
-router.get("/:mid/profile", getMerchantProfile);
-
-// UPDATE by MID
+// UPDATE merchant by MID
 router.put("/:mid", updateMerchantByMID);
 
-// DELETE by MID
+// DELETE merchant by MID
 router.delete("/:mid", deleteMerchantByMID);
 
 module.exports = router;

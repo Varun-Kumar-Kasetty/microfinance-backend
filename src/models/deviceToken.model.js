@@ -44,6 +44,8 @@ const deviceTokenSchema = new mongoose.Schema(
       default: true,
     },
   },
+
+  
   {
     collection: "device_tokens",
     timestamps: true,

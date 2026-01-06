@@ -9,10 +9,13 @@ exports.registerDeviceToken = async (req, res) => {
   try {
     const { token, platform, appVersion, userType } = req.body;
 
+  
+
     if (!token) {
-      return res
-        .status(400)
-        .json({ success: false, message: "FCM token is required" });
+      return res.status(400).json({
+        success: false,
+        message: "FCM token is required",
+      });
     }
 
     let resolvedUserType = userType;
@@ -20,38 +23,31 @@ exports.registerDeviceToken = async (req, res) => {
     let BID = null;
     let SID = null;
 
-    // Prefer auth info if available
-    if (req.merchant && req.merchant.MID) {
+    // 🔐 Prefer auth if available
+    if (req.merchant?.MID) {
       resolvedUserType = "merchant";
       MID = Number(req.merchant.MID);
-    } else if (req.borrower && req.borrower.BID) {
+    } else if (req.borrower?.BID) {
       resolvedUserType = "borrower";
       BID = Number(req.borrower.BID);
-    } else if (req.staff && req.staff.SID) {
+    } else if (req.staff?.SID) {
       resolvedUserType = "staff";
       SID = Number(req.staff.SID);
-      MID = Number(req.staff.MID || 0);
-    } else {
-      // fallback: take from body
-      if (!userType) {
-        return res.status(400).json({
-          success: false,
-          message: "userType is required if no auth token",
-        });
-      }
-      if (userType === "merchant") MID = Number(req.body.MID);
-      if (userType === "borrower") BID = Number(req.body.BID);
-      if (userType === "staff") SID = Number(req.body.SID);
     }
 
+    // 🟡 FALLBACK TO BODY (THIS WAS MISSING)
     if (!resolvedUserType) {
-      return res.status(400).json({
-        success: false,
-        message: "Could not resolve user type",
-      });
+      resolvedUserType = userType || "unknown";
     }
 
-    // Upsert by token
+    if (resolvedUserType === "merchant" && req.body.MID) {
+      MID = Number(req.body.MID);
+    }
+
+    if (resolvedUserType === "borrower" && req.body.BID) {
+      BID = Number(req.body.BID);
+    }
+
     const doc = await DeviceToken.findOneAndUpdate(
       { token },
       {
@@ -64,8 +60,10 @@ exports.registerDeviceToken = async (req, res) => {
         appVersion: appVersion || "",
         isActive: true,
       },
-      { new: true, upsert: true }
+      { upsert: true, new: true }
     );
+
+    console.log("✅ DEVICE TOKEN SAVED:", doc);
 
     return res.status(200).json({
       success: true,
@@ -73,10 +71,15 @@ exports.registerDeviceToken = async (req, res) => {
       data: doc,
     });
   } catch (error) {
-    console.error("Register Device Token Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    console.error("❌ PUSH REGISTER ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
+
+
 
 /**
  * Unregister device token (on logout / uninstall)

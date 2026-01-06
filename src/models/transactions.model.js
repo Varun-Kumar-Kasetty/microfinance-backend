@@ -47,6 +47,13 @@ const transactionSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    type: {
+      type: String,
+      enum: ["YOU_GOT", "YOU_GAVE"],
+      required: true,
+      index: true
+    },
+
 
     paidAt: {
       type: Date,

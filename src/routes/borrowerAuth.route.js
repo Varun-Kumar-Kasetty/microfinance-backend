@@ -1,23 +1,28 @@
 const express = require("express");
 const router = express.Router();
 
+const borrowerAuth = require("../middleware/borrowerAuth");
+
 const {
   sendBorrowerOtp,
   verifyBorrowerOtp,
-  getBorrowerMe,
 } = require("../controllers/borrowerAuth.controller");
 
-const borrowerAuth = require("../middleware/borrowerAuth");
+const {
+  registerBorrower,
+  getBorrowerAccount,
+  updateBorrowerAccount,
+} = require("../controllers/borrowerRegister.controller");
 
-// Base: /api/auth/borrower
+// Borrower self lifecycle
+router.post("/register", registerBorrower);
 
-// Send OTP
+// Auth
 router.post("/send-otp", sendBorrowerOtp);
-
-// Verify OTP + get token
 router.post("/verify-otp", verifyBorrowerOtp);
 
-// Get logged-in borrower profile
-router.get("/me", borrowerAuth, getBorrowerMe);
+// Account (self)
+router.get("/account", borrowerAuth, getBorrowerAccount);
+router.put("/account", borrowerAuth, updateBorrowerAccount);
 
 module.exports = router;

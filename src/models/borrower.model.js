@@ -4,14 +4,14 @@ const crypto = require("crypto");
 
 const borrowerSchema = new mongoose.Schema(
   {
-    // 🔢 Internal auto-increment ID (DO NOT expose)
+    // 🔢 Internal auto-increment ID
     BID: {
       type: Number,
       unique: true,
       index: true,
     },
 
-    // 🆔 Public Borrower ID (USED FOR QR & MANUAL ENTRY)
+    // 🆔 Public Borrower ID
     borrowerUID: {
       type: String,
       unique: true,
@@ -26,6 +26,36 @@ const borrowerSchema = new mongoose.Schema(
       maxLength: 255,
     },
 
+    email: {
+      type: String,
+      lowercase: true,
+      trim: true,
+      default: null,
+    },
+
+
+    permanentQrToken: {
+      type: String,
+      unique: true,
+      index: true,
+    },
+
+    isVerified: {
+      type: Boolean,
+      default: true, // borrower is verified once registered + OTP login
+    },
+    profilePhoto: {
+      type: String,   // URL or relative path
+      default: null,
+    },
+
+
+    qrSecret: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
+
     phoneNumber: {
       type: String,
       required: true,
@@ -36,28 +66,9 @@ const borrowerSchema = new mongoose.Schema(
       },
     },
 
-    // FK → Merchant.MID
-    VID: {
-      type: Number,
-      ref: "Merchant",
-      required: true,
-    },
-
-    totalLoans: {
-      type: Number,
-      default: 0,
-    },
-
-    activeLoans: {
-      type: Number,
-      default: 0,
-    },
-
-    trustScore: {
-      type: Number,
-      default: 100,
-      min: 0,
-      max: 100,
+    aadhaarNumber: {
+      type: String,
+      default: null,
     },
 
     location: {
@@ -65,46 +76,12 @@ const borrowerSchema = new mongoose.Schema(
       default: "",
     },
 
-    // 📍 Address fields
-    address: {
-      type: String,
-      default: "",
-    },
-    city: {
-      type: String,
-      default: "",
-    },
-    state: {
-      type: String,
-      default: "",
-    },
-    pincode: {
-      type: String,
-      default: "",
-    },
+    totalLoans: { type: Number, default: 0 },
+    activeLoans: { type: Number, default: 0 },
+    trustScore: { type: Number, default: 100 },
 
-    // 🌍 Geo location
-    locationGeo: {
-      type: {
-        type: String,
-        enum: ["Point"],
-        default: "Point",
-      },
-      coordinates: {
-        type: [Number], // [lng, lat]
-        default: [0, 0],
-      },
-    },
-
-    // 🔑 OTP login
-    otpCode: {
-      type: String,
-      default: null,
-    },
-    otpExpiresAt: {
-      type: Date,
-      default: null,
-    },
+    otpCode: { type: String, default: null },
+    otpExpiresAt: { type: Date, default: null },
   },
   {
     collection: "borrowers",
@@ -112,22 +89,47 @@ const borrowerSchema = new mongoose.Schema(
   }
 );
 
-// 🌍 Geo index
-borrowerSchema.index({ locationGeo: "2dsphere" });
+/* ===============================
+   UNIQUE INDEXES (IMPORTANT)
+   =============================== */
 
-/**
- * 🔁 Pre-save hook
- * - Auto increment BID
- * - Generate borrowerUID once
- */
-borrowerSchema.pre("save", async function (next) {
-  // Generate borrowerUID (only once)
+// Email → unique only if provided
+borrowerSchema.index(
+  { email: 1 },
+  { unique: true, partialFilterExpression: { email: { $type: "string" } } }
+);
+
+// Aadhaar → unique only if provided
+borrowerSchema.index(
+  { aadhaarNumber: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { aadhaarNumber: { $type: "string" } },
+  }
+);
+
+/* ===============================
+   PRE-SAVE HOOK
+   =============================== */
+borrowerSchema.pre("save", async function () {
+
   if (this.isNew && !this.borrowerUID) {
     const random = crypto.randomBytes(4).toString("hex").toUpperCase();
     this.borrowerUID = `LS-BRW-${random}`;
   }
 
-  // Auto-increment BID
+  if (this.isNew && !this.permanentQrToken) {
+  const hash = crypto
+    .createHash("sha256")
+    .update(this.borrowerUID + process.env.QR_SECRET)
+    .digest("hex")
+    .substring(0, 24)
+    .toUpperCase();
+
+  this.permanentQrToken = `LSQR-${hash}`;
+}
+
+
   if (this.isNew && !this.BID) {
     const counter = await Counter.findOneAndUpdate(
       { key: "borrowerBID" },
@@ -136,8 +138,6 @@ borrowerSchema.pre("save", async function (next) {
     );
     this.BID = counter.seq;
   }
-
-  next();
 });
 
 module.exports = mongoose.model("Borrower", borrowerSchema);

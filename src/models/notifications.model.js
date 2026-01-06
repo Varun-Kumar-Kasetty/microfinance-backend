@@ -9,7 +9,6 @@ const notificationSchema = new mongoose.Schema(
       index: true,
     },
 
-    // who is this for?
     targetType: {
       type: String,
       enum: ["merchant", "borrower"],
@@ -17,28 +16,47 @@ const notificationSchema = new mongoose.Schema(
     },
 
     MID: {
-      type: Number, // for merchant notifications
+      type: Number,
       ref: "Merchant",
     },
 
     BID: {
-      type: Number, // for borrower notifications
+      type: Number,
       ref: "Borrower",
     },
 
     LID: {
-      type: Number, // optional: related loan
+      type: Number,
       ref: "Loan",
     },
 
     TID: {
-      type: Number, // optional: related transaction
+      type: Number,
       ref: "Transaction",
     },
 
-    type: {
+    // 🔔 FIXED ENUM
+     type: {
       type: String,
-      enum: ["loan_created", "payment_received", "payment_made", "info"],
+      enum: [
+        // Loans
+        "loan_created",
+        "loan_closed",
+
+        // Payments
+        "payment_received",
+        "payment_made",
+
+        // Trust score
+        "trust_score",
+        "trust_score_change",     // ✅ FIX
+        "trust_score_restored",   // ✅ SAFE FOR FUTURE
+        "trust_score_deducted",   // ✅ SAFE FOR FUTURE
+
+        // Fraud / system
+        "fraud_alert",
+        "info",
+      ],
       default: "info",
     },
 
@@ -61,7 +79,7 @@ const notificationSchema = new mongoose.Schema(
   },
   {
     collection: "notifications",
-    timestamps: true, // createdAt = notification time
+    timestamps: true,
   }
 );
 

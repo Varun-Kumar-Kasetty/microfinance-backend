@@ -1,5 +1,10 @@
 const Borrower = require("../models/borrower.model");
 const jwt = require("jsonwebtoken");
+const { sendOtpEmail } = require("../services/emailService");
+
+// ===============================
+// Helpers
+// ===============================
 
 // 6-digit OTP
 const generateOtp = () => {
@@ -11,71 +16,85 @@ const generateToken = (borrower) => {
   return jwt.sign(
     {
       BID: borrower.BID,
-      phoneNumber: borrower.phoneNumber,
+      email: borrower.email,
       role: "borrower",
     },
-    process.env.JWT_SECRET || "MY_SECRET_KEY",
+    process.env.JWT_SECRET,
     { expiresIn: "7d" }
   );
 };
 
-// STEP 1: send OTP to borrower phone
+// ===============================
+// STEP 1: SEND OTP (EMAIL)
+// ===============================
 exports.sendBorrowerOtp = async (req, res) => {
   try {
-    const { phoneNumber } = req.body;
+    const { email } = req.body;
 
-    if (!phoneNumber) {
-      return res
-        .status(400)
-        .json({ success: false, message: "phoneNumber is required" });
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email is required",
+      });
     }
 
-    const borrower = await Borrower.findOne({ phoneNumber });
+    const borrower = await Borrower.findOne({ email });
 
     if (!borrower) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Borrower not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Borrower not found with this email",
+      });
     }
 
     const otp = generateOtp();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
     borrower.otpCode = otp;
     borrower.otpExpiresAt = expiresAt;
     await borrower.save();
 
-    // Later: integrate SMS service here
-    console.log("Borrower OTP:", otp, "for phone:", phoneNumber);
+    // TODO: integrate email service (Nodemailer)
+
+    console.log("Borrower OTP:", otp, "for email:", email);
+
+    //await sendOtpEmail(email, otp);
 
     return res.status(200).json({
       success: true,
-      message: "OTP sent successfully (check server log for now)",
+      message: "OTP sent successfully",
     });
+
   } catch (error) {
     console.error("Send Borrower OTP Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send OTP",
+    });
   }
 };
 
-// STEP 2: verify OTP, return JWT
+// ===============================
+// STEP 2: VERIFY OTP (EMAIL)
+// ===============================
 exports.verifyBorrowerOtp = async (req, res) => {
   try {
-    const { phoneNumber, otp } = req.body;
+    const { email, otp } = req.body;
 
-    if (!phoneNumber || !otp) {
+    if (!email || !otp) {
       return res.status(400).json({
         success: false,
-        message: "phoneNumber and otp are required",
+        message: "Email and OTP are required",
       });
     }
 
-    const borrower = await Borrower.findOne({ phoneNumber });
+    const borrower = await Borrower.findOne({ email });
 
     if (!borrower) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Borrower not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Borrower not found",
+      });
     }
 
     if (!borrower.otpCode || !borrower.otpExpiresAt) {
@@ -97,12 +116,13 @@ exports.verifyBorrowerOtp = async (req, res) => {
     }
 
     if (borrower.otpCode !== otp) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid OTP" });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP",
+      });
     }
 
-    // OTP OK → clear it, issue token
+    // OTP verified → clear OTP
     borrower.otpCode = null;
     borrower.otpExpiresAt = null;
     await borrower.save();
@@ -113,39 +133,56 @@ exports.verifyBorrowerOtp = async (req, res) => {
       success: true,
       message: "OTP verified. Login successful.",
       token,
-      borrower,
+      borrower: {
+        BID: borrower.BID,
+        borrowerUID: borrower.borrowerUID,
+        fullName: borrower.fullName,
+        email: borrower.email,
+      },
     });
+
   } catch (error) {
     console.error("Verify Borrower OTP Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({
+      success: false,
+      message: "OTP verification failed",
+    });
   }
 };
 
-// STEP 3: get current borrower profile from token
+// ===============================
+// STEP 3: GET CURRENT BORROWER
+// ===============================
 exports.getBorrowerMe = async (req, res) => {
   try {
     const BID = req.borrower?.BID;
 
     if (!BID) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Unauthorized: borrower token missing" });
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: borrower token missing",
+      });
     }
 
     const borrower = await Borrower.findOne({ BID }).lean();
 
     if (!borrower) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Borrower not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Borrower not found",
+      });
     }
 
     return res.status(200).json({
       success: true,
       data: borrower,
     });
+
   } catch (error) {
     console.error("Get Borrower Me Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch borrower profile",
+    });
   }
 };

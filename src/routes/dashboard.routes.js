@@ -3,25 +3,24 @@ const router = express.Router();
 
 const {
   getMerchantDashboard,
+} = require("../controllers/merchant.dashboard.controller");
+
+const {
   getBorrowerDashboard,
-} = require("../controllers/dashboard.controller");
+} = require("../controllers/borrower.dashboard.controller");
 
-const auth = require("../middleware/auth"); // merchant JWT auth
-const borrowerAuth = require("../middleware/borrowerAuth"); // ⬅ new
+const auth = require("../middleware/auth");
+const borrowerAuth = require("../middleware/borrowerAuth");
 
-// Base: /api/dashboard
+// ================= DASHBOARD ROUTES =================
 
-// MERCHANT DASHBOARD (for logged-in merchant)
+// MERCHANT DASHBOARD
 router.get("/merchant", auth, getMerchantDashboard);
 
-// BORROWER DASHBOARD by BID (old way - optional, can keep for admin)
-router.get("/borrower/:bid", getBorrowerDashboard);
 
-// BORROWER DASHBOARD for logged-in borrower (using token)
-router.get("/borrower/me", borrowerAuth, async (req, res) => {
-  // reuse existing controller logic by passing BID from token
-  req.params.bid = req.borrower.BID;
-  return getBorrowerDashboard(req, res);
-});
+// BORROWER DASHBOARD (ADMIN / INTERNAL)
+router.get("/borrower", borrowerAuth,getBorrowerDashboard);
+
+
 
 module.exports = router;

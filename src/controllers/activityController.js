@@ -11,6 +11,7 @@ exports.getRecentActivities = async (req, res) => {
 
     const formatted = activities.map(item => ({
       borrowerName: item.borrowerName,
+      type: item.type, 
       action:
         item.type === "REPAYMENT"
           ? "Repayment"
@@ -45,3 +46,41 @@ function timeAgo(date) {
 
   return `${Math.floor(seconds / 86400)} days ago`;
 }
+
+// GET /api/merchant/all
+// GET /api/merchant/all
+exports.getAllActivities = async (req, res) => {
+  try {
+    const merchantId = req.user.MID;
+
+    const activities = await Activity.find({ merchantId })
+      .sort({ createdAt: -1 });
+
+    const formatted = activities.map(item => ({
+      borrowerName: item.borrowerName,
+      type: item.type,
+      action:
+        item.type === "REPAYMENT"
+          ? "Repayment"
+          : item.type === "LOAN_CREATED"
+          ? "Loan Created"
+          : "Loan Closed",
+      amount: item.amount,
+      timeAgo: timeAgo(item.createdAt)
+    }));
+
+    return res.json({
+      success: true,
+      data: formatted
+    });
+
+  } catch (error) {
+    console.error("Get all activities error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load activities"
+    });
+  }
+};
+
+

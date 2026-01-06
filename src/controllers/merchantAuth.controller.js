@@ -47,7 +47,10 @@ exports.sendMerchantOtp = async (req, res) => {
     await merchant.save();
 
     // ✅ SEND EMAIL
-    await sendOtpEmail(email, otp);
+
+    console.log("Merchant OTP:", otp, "for email:", email);
+    
+    //await sendOtpEmail(email, otp);
 
     return res.status(200).json({
       success: true,
@@ -122,10 +125,17 @@ exports.verifyMerchantOtp = async (req, res) => {
       success: true,
       message: "OTP verified. Login successful.",
       token,
-      merchant,
+      merchant: {
+        MID: merchant.MID,
+        email: merchant.email,
+        storeName: merchant.storeName,
+        fullName: merchant.fullName,
+      },
     });
+
   } catch (error) {
     console.error("Verify OTP Error:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+

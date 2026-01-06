@@ -1,10 +1,21 @@
 const Loan = require("../models/loans.model");
 const Borrower = require("../models/borrower.model");
 const FraudAlert = require("../models/fraudAlert.model");
-const { createNotification } = require("./notification.service");
+const { logActivity } = require("../utils/activityLogger");
 
-// Simple helper to create alert + notify merchant for medium/high
-async function createFraudAlert({ BID, MID, LID, type, severity, title, message, details }) {
+/**
+ * Create fraud alert + log activity
+ */
+async function createFraudAlert({
+  BID,
+  MID,
+  LID,
+  type,
+  severity,
+  title,
+  message,
+  details = {},
+}) {
   const alert = await FraudAlert.create({
     BID,
     MID,
@@ -13,19 +24,20 @@ async function createFraudAlert({ BID, MID, LID, type, severity, title, message,
     severity,
     title,
     message,
-    details: details || {},
+    details,
   });
 
-  // Notify merchant for medium/high alerts
+  // 🔔 Notify merchant ONLY for medium / high
   if (severity === "medium" || severity === "high") {
-    await createNotification({
-      targetType: "merchant",
-      MID,
-      BID,
-      LID,
-      type: "info",
-      title: `Fraud Alert: ${title}`,
-      message,
+    await logActivity({
+      merchantId: MID,
+      borrowerId: BID,
+      loanId: LID,
+      type: "FRAUD_ALERT",
+      amount: 0,
+      description: title,
+      notifyMerchant: true,
+      notifyBorrower: false,
     });
   }
 
@@ -33,8 +45,7 @@ async function createFraudAlert({ BID, MID, LID, type, severity, title, message,
 }
 
 /**
- * Run fraud checks whenever a new loan is created.
- * Returns list of created alerts.
+ * Run fraud checks when loan is created
  */
 async function runLoanFraudChecks(loan) {
   const BID = loan.BID;
@@ -46,7 +57,9 @@ async function runLoanFraudChecks(loan) {
   const borrower = await Borrower.findOne({ BID });
   if (!borrower) return alerts;
 
-  // 1) Count active loans for this borrower (all merchants)
+  // ===============================
+  // 1️⃣ TOO MANY ACTIVE LOANS
+  // ===============================
   const activeLoans = await Loan.find({
     BID,
     status: "active",
@@ -63,7 +76,7 @@ async function runLoanFraudChecks(loan) {
         type: "too_many_active_loans",
         severity: "high",
         title: "Too Many Active Loans",
-        message: `Borrower BID ${BID} has ${totalActive} active loans.`,
+        message: `Borrower has ${totalActive} active loans`,
         details: { totalActive },
       })
     );
@@ -73,16 +86,18 @@ async function runLoanFraudChecks(loan) {
         BID,
         MID,
         LID,
-        type: "too_many_active_loans",
+        type: "multiple_active_loans",
         severity: "medium",
         title: "Multiple Active Loans",
-        message: `Borrower BID ${BID} has ${totalActive} active loans.`,
+        message: `Borrower has ${totalActive} active loans`,
         details: { totalActive },
       })
     );
   }
 
-  // 2) Active loans with OTHER merchants
+  // ===============================
+  // 2️⃣ MULTI-MERCHANT BORROWING
+  // ===============================
   const activeOtherMerchants = activeLoans.filter(
     (l) => l.MID !== MID
   ).length;
@@ -96,21 +111,26 @@ async function runLoanFraudChecks(loan) {
         type: "multi_merchant_borrowing",
         severity: activeOtherMerchants > 1 ? "high" : "medium",
         title: "Borrowing From Multiple Merchants",
-        message: `Borrower BID ${BID} has active loans with ${activeOtherMerchants} other merchant(s).`,
+        message: `Borrower has loans with ${activeOtherMerchants} other merchant(s)`,
         details: { activeOtherMerchants },
       })
     );
   }
 
-  // 3) Overdue loans check (simple logic: createdAt + loanDurationDays < now)
+  // ===============================
+  // 3️⃣ OVERDUE LOANS
+  // ===============================
   const now = new Date();
   let overdueCount = 0;
 
   activeLoans.forEach((l) => {
+    if (!l.createdAt || !l.loanDurationDays) return;
+
     const dueDate = new Date(
-      l.createdAt.getTime() +
+      new Date(l.createdAt).getTime() +
         l.loanDurationDays * 24 * 60 * 60 * 1000
     );
+
     if (dueDate < now) overdueCount += 1;
   });
 
@@ -123,40 +143,53 @@ async function runLoanFraudChecks(loan) {
         type: "overdue_loans",
         severity: overdueCount > 1 ? "high" : "medium",
         title: "Overdue Loans Detected",
-        message: `Borrower BID ${BID} has ${overdueCount} overdue active loan(s).`,
+        message: `Borrower has ${overdueCount} overdue loan(s)`,
         details: { overdueCount },
       })
     );
   }
 
-  // 4) Adjust trustScore based on alerts
+  // ===============================
+  // 4️⃣ TRUST SCORE PENALTY
+  // ===============================
   if (alerts.length > 0) {
     let penalty = 0;
+
     alerts.forEach((a) => {
       if (a.severity === "high") penalty += 25;
       else if (a.severity === "medium") penalty += 10;
       else penalty += 5;
     });
 
-    let newTrust = (borrower.trustScore || 100) - penalty;
-    if (newTrust < 0) newTrust = 0;
-
-    borrower.trustScore = newTrust;
+    borrower.trustScore = Math.max((borrower.trustScore || 100) - penalty, 0);
     await borrower.save();
 
-    // If trust score very low, create extra alert
-    if (newTrust < 50) {
-      const lowTrustAlert = await createFraudAlert({
-        BID,
-        MID,
-        LID,
-        type: "low_trust_score",
-        severity: "high",
-        title: "Low Trust Score",
-        message: `Borrower BID ${BID} now has low trust score (${newTrust}).`,
-        details: { trustScore: newTrust },
-      });
-      alerts.push(lowTrustAlert);
+    // 🔔 Notify borrower about trust score drop
+    await logActivity({
+      merchantId: MID,
+      borrowerId: BID,
+      loanId: LID,
+      type: "TRUST_SCORE_CHANGE",
+      amount: -penalty,
+      description: `Trust score reduced by ${penalty}`,
+      notifyMerchant: false,
+      notifyBorrower: true,
+    });
+
+    // EXTRA alert if trust score critical
+    if (borrower.trustScore < 50) {
+      alerts.push(
+        await createFraudAlert({
+          BID,
+          MID,
+          LID,
+          type: "low_trust_score",
+          severity: "high",
+          title: "Low Trust Score",
+          message: `Borrower trust score dropped to ${borrower.trustScore}`,
+          details: { trustScore: borrower.trustScore },
+        })
+      );
     }
   }
 
@@ -164,7 +197,7 @@ async function runLoanFraudChecks(loan) {
 }
 
 /**
- * Get fraud summary for a borrower
+ * Borrower fraud summary
  */
 async function getBorrowerFraudSummary(BID) {
   const borrower = await Borrower.findOne({ BID }).lean();
@@ -175,13 +208,11 @@ async function getBorrowerFraudSummary(BID) {
     .limit(50)
     .lean();
 
-  const unresolvedCount = alerts.filter((a) => !a.isResolved).length;
-
   return {
     borrower,
     trustScore: borrower.trustScore,
     totalAlerts: alerts.length,
-    unresolvedAlerts: unresolvedCount,
+    unresolvedAlerts: alerts.filter((a) => !a.isResolved).length,
     alerts,
   };
 }

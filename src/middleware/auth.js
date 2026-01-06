@@ -18,7 +18,7 @@ module.exports = (req, res, next) => {
     // ✅ Standard user object
     req.user = {
       MID: decoded.MID,
-      phoneNumber: decoded.phoneNumber,
+      email: decoded.email,
       role: decoded.role,
     };
 

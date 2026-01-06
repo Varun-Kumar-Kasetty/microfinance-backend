@@ -34,6 +34,7 @@ const fraudAlertSchema = new mongoose.Schema(
       type: String,
       enum: [
         "too_many_active_loans",
+        "multiple_active_loans", 
         "multi_merchant_borrowing",
         "overdue_loans",
         "low_trust_score",
