@@ -10,10 +10,7 @@ async function sendPushToTokens(tokens, { title, message, data }) {
 
   try {
     const admin = getFirebaseAdmin();
-    if (!admin || !admin.messaging) {
-      console.warn("Firebase Admin not initialized. Skipping push.");
-      return;
-    }
+    if (!admin || !admin.messaging) return;
 
     const payload = {
       notification: {
@@ -21,12 +18,10 @@ async function sendPushToTokens(tokens, { title, message, data }) {
         body: message || "",
       },
       data: {
-        // all values must be strings for FCM data
         ...(data || {}),
       },
     };
 
-    // Use multicast for multiple tokens
     const response = await admin.messaging().sendEachForMulticast({
       tokens,
       ...payload,
@@ -39,10 +34,30 @@ async function sendPushToTokens(tokens, { title, message, data }) {
       response.failureCount,
       "failure"
     );
+
+    // 🔥 AUTO-DEACTIVATE BAD TOKENS
+    const failedTokens = [];
+
+    response.responses.forEach((res, idx) => {
+      if (!res.success) {
+        failedTokens.push(tokens[idx]);
+        console.error("FCM token failed:", res.error?.message);
+      }
+    });
+
+    if (failedTokens.length > 0) {
+      await DeviceToken.updateMany(
+        { token: { $in: failedTokens } },
+        { $set: { isActive: false } }
+      );
+      console.log("Deactivated", failedTokens.length, "invalid FCM tokens");
+    }
+
   } catch (error) {
     console.error("FCM push error:", error);
   }
 }
+
 
 /**
  * Main notification creator used everywhere in app
@@ -53,7 +68,6 @@ async function createNotification({
   targetType, // "merchant" | "borrower" | "staff"
   MID,
   BID,
-  SID,
   LID,
   TID,
   type,
@@ -89,14 +103,7 @@ async function createNotification({
         isActive: true,
       }).lean();
       tokens = docs.map((d) => d.token);
-    } else if (targetType === "staff" && SID) {
-      const docs = await DeviceToken.find({
-        userType: "staff",
-        SID: Number(SID),
-        isActive: true,
-      }).lean();
-      tokens = docs.map((d) => d.token);
-    }
+    } 
 
     // Send push notification if we have tokens
     if (tokens.length > 0) {
@@ -115,7 +122,7 @@ async function createNotification({
       });
     } else {
       console.log(
-        `No device tokens found for ${targetType} MID=${MID} BID=${BID} SID=${SID}`
+        `No device tokens found for ${targetType} MID=${MID} BID=${BID}`
       );
     }
 
