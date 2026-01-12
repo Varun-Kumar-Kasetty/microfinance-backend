@@ -55,9 +55,9 @@ exports.sendBorrowerOtp = async (req, res) => {
     await borrower.save();
 
 
-    console.log("Borrower OTP:", otp, "for email:", email);
+    // console.log("Borrower OTP:", otp, "for email:", email);
 
-    // await sendOtpEmail(email, otp);
+    await sendOtpEmail(email, otp);
 
     return res.status(200).json({
       success: true,

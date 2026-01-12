@@ -48,9 +48,9 @@ exports.sendMerchantOtp = async (req, res) => {
 
     // ✅ SEND EMAIL
 
-    console.log("Merchant OTP:", otp, "for email:", email);
+    // console.log("Merchant OTP:", otp, "for email:", email);
     
-    // `await sendOtpEmail(email, otp);
+    await sendOtpEmail(email, otp);
 
     return res.status(200).json({
       success: true,
