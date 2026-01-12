@@ -2,3 +2,5 @@ firebase-service-account.json
 google-services.json
 .env
 *.key
+node_modules/
+
