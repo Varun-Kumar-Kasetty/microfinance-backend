@@ -1,4 +1,4 @@
-PORT = 8686;
+PORT = 8026;
 require("dotenv").config();
 
 const Razorpay = require("razorpay");
@@ -79,7 +79,7 @@ app.get("/", (req, res) => {
   res.send("LendSafe API running...");
 });
 
-app.listen(8686, "0.0.0.0", () => {
+app.listen(8026, "0.0.0.0", () => {
   console.log(`The server is running at Port: ${PORT}.`);
 });
 
